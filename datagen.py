@@ -1,9 +1,7 @@
 import torch
-from PIL import Image
-import imageio
 import numpy as np
 import torch.utils.data as data
-import time
+
 
 class RandomCrop(object):
     """Crop randomly the image in a sample.
@@ -18,17 +16,16 @@ class RandomCrop(object):
 
     def __call__(self, image, gt_image):
 
-        h, w = image.shape[1],image.shape[2]
+        h, w = image.shape[1], image.shape[2]
         new_h, new_w = self.output_size
 
         top = np.random.randint(0, h - new_h)
         left = np.random.randint(0, w - new_w)
 
-        traindata_tmp = image[:,top: top + new_h, left: left + new_w]
-        gtdata_tmp = gt_image[:,top: top + new_h, left: left + new_w]
+        traindata_tmp = image[:, top: top + new_h, left: left + new_w]
+        gtdata_tmp = gt_image[:, top*2: top*2 + new_h*2, left*2: left*2 + new_w*2]
 
         return traindata_tmp, gtdata_tmp
-
 
 
 class LFDataset(data.Dataset):
@@ -51,45 +48,45 @@ class LFDataset(data.Dataset):
         self.If_flip = If_flip
         self.If_rotation = If_rotation
 
-
     def __len__(self):
         return self.batch_size
 
     def __getitem__(self, idx):
 
+        # for test
+        if self.crop_size == 1:
+            train_data = self.traindata_tmp
+            gt_data = self.gtdata_tmp
+        # for train
+        else:
+            train_data = np.zeros((self.view_n, self.crop_size, self.crop_size), dtype=np.float32)
+            gt_data = np.zeros((1, self.crop_size*2, self.crop_size*2), dtype=np.float32)
+            train_data[:, :, :], gt_data[:, :, :] = self.RandomCrop(self.traindata_tmp, self.gtdata_tmp)
+
         # flip
         if self.If_flip:
-            if np.random.random() <= 0.5:
-                random_tmp = np.random.random()
-                if random_tmp <= (1.0 / 3):
-                    self.traindata_tmp = np.flip(self.traindata_tmp, 1)
-                    self.gtdata_tmp = np.flip(self.gtdata_tmp, 1)
-                else:
-                    self.traindata_tmp = np.flip(self.traindata_tmp, 2)
-                    self.gtdata_tmp = np.flip(self.gtdata_tmp, 2)
+            random_tmp = np.random.random()
+            if random_tmp >= (2.0 / 3):
+                train_data = np.flip(train_data, 1)
+                gt_data = np.flip(gt_data, 1)
+            elif random_tmp <= (1.0 / 3):
+                train_data = np.flip(train_data, 2)
+                gt_data = np.flip(gt_data, 2)
 
         # rotation
         if self.If_rotation:
-            if np.random.random() <= 0.5:
-                random_tmp = np.random.random()
-                if random_tmp <= 0.5:
-                    self.traindata_tmp = np.rot90(self.traindata_tmp, 1, (1,2))
-                    self.gtdata_tmp = np.rot90(self.gtdata_tmp, 1, (1,2))
-                else:
-                    self.traindata_tmp = np.rot90(self.traindata_tmp, 2, (1, 2))
-                    self.gtdata_tmp = np.rot90(self.gtdata_tmp, 2, (1, 2))
+            random_tmp = np.random.random()
+            if random_tmp <= (1.0 / 4):
+                train_data = np.rot90(train_data, 1, (1,2))
+                gt_data = np.rot90(gt_data, 1, (1,2))
+            elif random_tmp >= (3.0 / 4):
+                train_data = np.rot90(train_data, 2, (1, 2))
+                gt_data = np.rot90(gt_data, 2, (1, 2))
+            elif (random_tmp >= (1.0 / 4)) & (random_tmp <= (2.0 / 4)):
+                train_data = np.rot90(train_data, 3, (1, 2))
+                gt_data = np.rot90(gt_data, 3, (1, 2))
 
         if self.transform:
-            self.traindata_tmp, self.gtdata_tmp = self.transform(self.traindata_tmp, self.gtdata_tmp)
+            train_data, gt_data = self.transform(train_data, gt_data)
 
-        # for test
-        if self.crop_size==1:
-            traindata = self.traindata_tmp
-            gtdata = self.gtdata_tmp
-        # for train
-        else:
-            traindata = np.zeros((self.view_n, self.crop_size, self.crop_size), dtype=np.float32)
-            gtdata = np.zeros((1, self.crop_size, self.crop_size), dtype=np.float32)
-            traindata[:, :, :], gtdata[:, :, :] = self.RandomCrop(self.traindata_tmp, self.gtdata_tmp)
-
-        return torch.from_numpy(traindata.copy()), torch.from_numpy(gtdata.copy())
+        return torch.from_numpy(train_data.copy()), torch.from_numpy(gt_data.copy())
